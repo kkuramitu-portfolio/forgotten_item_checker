@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 void main() {
-  WidgetsFlutterBinding.ensureInitialized(); // 真っ白画面対策
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const ForgottenItemCheckerApp());
 }
 
@@ -25,8 +25,6 @@ class ForgottenItemCheckerApp extends StatelessWidget {
 }
 
 enum ItemStatus { pending, done, skipped }
-
-// --- モデルクラス ---
 
 class CheckItem {
   String name;
@@ -79,8 +77,6 @@ class ItemTemplate {
     );
   }
 }
-
-// --- メイン画面 ---
 
 class MainCheckPage extends StatefulWidget {
   const MainCheckPage({super.key});
@@ -419,8 +415,6 @@ class _MainCheckPageState extends State<MainCheckPage> {
   }
 }
 
-// --- テンプレート編集画面 ---
-
 class EditTemplatesPage extends StatefulWidget {
   final List<ItemTemplate> templates;
   final int initialIndex;
@@ -607,16 +601,15 @@ class _EditTemplatesPageState extends State<EditTemplatesPage> {
           Expanded(
             child: ReorderableListView.builder(
               itemCount: currentTemplate.items.length,
-              onReorder: (oldIndex, newIndex) {
+              // 最新の onReorderItem を使用
+              onReorderItem: (oldIndex, newIndex) {
                 setState(() {
-                  if (oldIndex < newIndex) newIndex -= 1;
                   final item = currentTemplate.items.removeAt(oldIndex);
                   currentTemplate.items.insert(newIndex, item);
                 });
               },
               itemBuilder: (context, index) {
                 final item = currentTemplate.items[index];
-                // 各タイルを個別のStatefulWidgetとして切り出し、コントローラを管理
                 return EditItemTile(
                   key: ValueKey(item),
                   item: item,
@@ -635,8 +628,6 @@ class _EditTemplatesPageState extends State<EditTemplatesPage> {
     );
   }
 }
-
-// --- 各項目の編集用タイル（コントローラ管理のため分離） ---
 
 class EditItemTile extends StatefulWidget {
   final CheckItem item;
@@ -773,7 +764,6 @@ class _EditItemTileState extends State<EditItemTile> {
                               widget.item.linkUrl = val;
                             }
                           },
-                          // キーボードの完了を押した時に履歴に保存
                           onFieldSubmitted: (val) {
                             if (linkTypeIndex == 1 && val.isNotEmpty) {
                               if (!widget.scHistory.contains(val)) {
@@ -815,27 +805,28 @@ class _EditItemTileState extends State<EditItemTile> {
                               spacing: 4,
                               children: widget.scHistory
                                   .map(
-                                    (name) => ActionChip(
-                                      label: Text(
-                                        name,
-                                        style: const TextStyle(fontSize: 10),
-                                      ),
-                                      padding: EdgeInsets.zero,
-                                      // タップで反映
-                                      onPressed: () {
-                                        setState(() {
-                                          _linkController.text = name;
-                                          widget.item.linkUrl =
-                                              'shortcuts://run-shortcut?name=$name';
-                                        });
-                                      },
-                                      // 長押しで削除
+                                    (name) => GestureDetector(
+                                      // GestureDetectorで長押しを検知
                                       onLongPress: () {
                                         setState(
                                           () => widget.scHistory.remove(name),
                                         );
                                         widget.onHistoryChanged();
                                       },
+                                      child: ActionChip(
+                                        label: Text(
+                                          name,
+                                          style: const TextStyle(fontSize: 10),
+                                        ),
+                                        padding: EdgeInsets.zero,
+                                        onPressed: () {
+                                          setState(() {
+                                            _linkController.text = name;
+                                            widget.item.linkUrl =
+                                                'shortcuts://run-shortcut?name=$name';
+                                          });
+                                        },
+                                      ),
                                     ),
                                   )
                                   .toList(),
