@@ -65,7 +65,7 @@ class ItemTemplate {
     return {
       'title': title,
       'items': items.map((i) => i.toMap()).toList(),
-      'color': color.value,
+      'color': color.toARGB32(),
     };
   }
 
@@ -73,7 +73,7 @@ class ItemTemplate {
     return ItemTemplate(
       title: map['title'],
       items: (map['items'] as List).map((i) => CheckItem.fromMap(i)).toList(),
-      color: Color(map['color'] ?? Colors.blue.value),
+      color: Color(map['color'] ?? Colors.blue.toARGB32()),
     );
   }
 }
@@ -117,9 +117,10 @@ class _MainCheckPageState extends State<MainCheckPage> {
         _templates = List<ItemTemplate>.from(
           l.map((model) => ItemTemplate.fromMap(model)),
         );
-        _currentIndex = (savedIndex != null && savedIndex < _templates.length)
-            ? savedIndex
-            : 0;
+        _currentIndex = savedIndex ?? 0;
+        if (_currentIndex >= _templates.length) {
+          _currentIndex = 0;
+        }
         _scHistory = savedHistory ?? [];
       } else {
         _templates = [
@@ -140,6 +141,13 @@ class _MainCheckPageState extends State<MainCheckPage> {
     });
   }
 
+  void _sortItems() {
+    setState(() {
+      final items = _templates[_currentIndex].items;
+      items.sort((a, b) => a.status.index.compareTo(b.status.index));
+    });
+  }
+
   Future<void> _launchURL(String urlString) async {
     final Uri url = Uri.parse(urlString);
     if (!await launchUrl(url)) {
@@ -153,8 +161,13 @@ class _MainCheckPageState extends State<MainCheckPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading || _templates.isEmpty)
+    if (_isLoading || _templates.isEmpty) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    if (_currentIndex >= _templates.length) {
+      _currentIndex = 0;
+    }
 
     final currentTemplate = _templates[_currentIndex];
     final pendingItems = currentTemplate.items
@@ -165,26 +178,52 @@ class _MainCheckPageState extends State<MainCheckPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          currentTemplate.title,
+          currentTemplate.title.isEmpty ? '（名前未設定）' : currentTemplate.title,
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
-        backgroundColor: currentTemplate.color.withOpacity(0.8),
+        backgroundColor: currentTemplate.color.withValues(alpha: 0.8),
         foregroundColor: Colors.white,
         actions: [
           PopupMenuButton<int>(
             icon: const Icon(Icons.swap_horiz),
-            onSelected: (index) => setState(() {
-              _currentIndex = index;
-              _saveData();
-            }),
-            itemBuilder: (context) => _templates
-                .asMap()
-                .entries
-                .map(
-                  (e) =>
-                      PopupMenuItem(value: e.key, child: Text(e.value.title)),
-                )
-                .toList(),
+            onSelected: (index) {
+              if (index == 999) {
+                _launchURL(
+                  'https://docs.google.com/forms/d/e/1FAIpQLSfwPKdGwoEvtr3VvRbvYGuMjd6Gb0_VHIs83OCQo_Cvltv5-A/viewform?usp=pp_url&entry.1476558753=%E5%BF%98%E3%82%8C%E7%89%A9%E3%83%81%E3%82%A7%E3%83%83%E3%82%AB%E3%83%BC+Pro',
+                );
+              } else {
+                setState(() {
+                  _currentIndex = index;
+                  _saveData();
+                });
+              }
+            },
+            // 【修正ポイント】型を明示したリストを直接作成する
+            itemBuilder: (BuildContext context) => <PopupMenuEntry<int>>[
+              // テンプレート一覧をループで回して追加
+              for (int i = 0; i < _templates.length; i++)
+                PopupMenuItem<int>(
+                  value: i,
+                  child: Text(
+                    _templates[i].title.isEmpty
+                        ? '（名前未設定）'
+                        : _templates[i].title,
+                  ),
+                ),
+              // 仕切り線
+              const PopupMenuDivider(),
+              // フィードバック項目
+              const PopupMenuItem<int>(
+                value: 999,
+                child: Row(
+                  children: [
+                    Icon(Icons.feedback_outlined, color: Colors.blue, size: 20),
+                    SizedBox(width: 8),
+                    Text('フィードバックを送る'),
+                  ],
+                ),
+              ),
+            ],
           ),
           IconButton(
             icon: const Icon(Icons.edit),
@@ -199,7 +238,11 @@ class _MainCheckPageState extends State<MainCheckPage> {
                   ),
                 ),
               );
-              setState(() {});
+              setState(() {
+                if (_currentIndex >= _templates.length) {
+                  _currentIndex = 0;
+                }
+              });
               _saveData();
             },
           ),
@@ -255,7 +298,7 @@ class _MainCheckPageState extends State<MainCheckPage> {
                       : 'リンクを開く',
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: themeColor.withOpacity(0.1),
+                  backgroundColor: themeColor.withValues(alpha: 0.1),
                   foregroundColor: themeColor,
                 ),
               ),
@@ -267,18 +310,23 @@ class _MainCheckPageState extends State<MainCheckPage> {
               children: [
                 _actionButton('スキップ', Icons.close, Colors.grey, () {
                   setState(() => item.status = ItemStatus.skipped);
+                  _sortItems();
                   _saveData();
                 }),
                 _actionButton('後で', Icons.replay, Colors.orange, () {
                   setState(() {
                     final items = _templates[_currentIndex].items;
                     items.remove(item);
-                    items.add(item);
+                    int lastPendingIndex = items.lastIndexWhere(
+                      (i) => i.status == ItemStatus.pending,
+                    );
+                    items.insert(lastPendingIndex + 1, item);
                   });
                   _saveData();
                 }),
                 _actionButton('OK!', Icons.check, themeColor, () {
                   setState(() => item.status = ItemStatus.done);
+                  _sortItems();
                   _saveData();
                 }),
               ],
@@ -302,7 +350,7 @@ class _MainCheckPageState extends State<MainCheckPage> {
           style: ElevatedButton.styleFrom(
             shape: const CircleBorder(),
             padding: const EdgeInsets.all(16),
-            backgroundColor: color.withOpacity(0.1),
+            backgroundColor: color.withValues(alpha: 0.1),
             foregroundColor: color,
             elevation: 0,
           ),
@@ -326,9 +374,9 @@ class _MainCheckPageState extends State<MainCheckPage> {
         ? Colors.black
         : Colors.grey;
     Color bgColor = item.status == ItemStatus.done
-        ? themeColor.withOpacity(0.05)
+        ? themeColor.withValues(alpha: 0.05)
         : (item.status == ItemStatus.skipped
-              ? Colors.grey.withOpacity(0.05)
+              ? Colors.grey.withValues(alpha: 0.05)
               : Colors.transparent);
 
     return Container(
@@ -344,7 +392,7 @@ class _MainCheckPageState extends State<MainCheckPage> {
               ? themeColor
               : (item.status == ItemStatus.skipped
                     ? Colors.grey
-                    : themeColor.withOpacity(0.5)),
+                    : themeColor.withValues(alpha: 0.5)),
         ),
         title: Text(
           item.name,
@@ -365,6 +413,7 @@ class _MainCheckPageState extends State<MainCheckPage> {
             ? TextButton(
                 onPressed: () {
                   setState(() => item.status = ItemStatus.pending);
+                  _sortItems();
                   _saveData();
                 },
                 child: const Text('戻す'),
@@ -378,6 +427,7 @@ class _MainCheckPageState extends State<MainCheckPage> {
               items.insert(0, item);
             } else {
               item.status = ItemStatus.pending;
+              _sortItems();
             }
           });
           _saveData();
@@ -461,7 +511,7 @@ class _EditTemplatesPageState extends State<EditTemplatesPage> {
       body: Column(
         children: [
           Container(
-            color: currentTemplate.color.withOpacity(0.1),
+            color: currentTemplate.color.withValues(alpha: 0.1),
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
@@ -475,16 +525,15 @@ class _EditTemplatesPageState extends State<EditTemplatesPage> {
                       child: DropdownButton<int>(
                         isExpanded: true,
                         value: _editingTemplateIndex,
-                        items: widget.templates
-                            .asMap()
-                            .entries
-                            .map(
-                              (e) => DropdownMenuItem(
-                                value: e.key,
-                                child: Text(e.value.title),
-                              ),
-                            )
-                            .toList(),
+                        items: widget.templates.asMap().entries.map((e) {
+                          final displayName = e.value.title.isEmpty
+                              ? '（名前未設定）'
+                              : e.value.title;
+                          return DropdownMenuItem(
+                            value: e.key,
+                            child: Text(displayName),
+                          );
+                        }).toList(),
                         onChanged: (val) => setState(() {
                           _editingTemplateIndex = val!;
                           _titleController.text = widget.templates[val].title;
@@ -527,13 +576,16 @@ class _EditTemplatesPageState extends State<EditTemplatesPage> {
                     Expanded(
                       child: TextField(
                         controller: _titleController,
-                        decoration: const InputDecoration(labelText: 'セットの名前'),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.save),
-                      onPressed: () => setState(
-                        () => currentTemplate.title = _titleController.text,
+                        onChanged: (val) {
+                          setState(() {
+                            currentTemplate.title = val;
+                          });
+                        },
+                        decoration: const InputDecoration(
+                          labelText: 'セットの名前',
+                          hintText: '例：出張の日（タップして入力）',
+                          isDense: true,
+                        ),
                       ),
                     ),
                     IconButton(
@@ -541,28 +593,35 @@ class _EditTemplatesPageState extends State<EditTemplatesPage> {
                         Icons.add_to_photos,
                         color: Colors.green,
                       ),
+                      tooltip: '新規セット追加',
                       onPressed: () {
                         setState(() {
                           widget.templates.add(
                             ItemTemplate(
-                              title: '新しいセット',
-                              items: [CheckItem(name: '新しい項目')],
+                              title: '',
+                              items: [],
                               color: Colors.blue,
                             ),
                           );
                           _editingTemplateIndex = widget.templates.length - 1;
-                          _titleController.text = '新しいセット';
+                          _titleController.clear();
                         });
                       },
                     ),
                     IconButton(
                       icon: const Icon(Icons.delete_forever, color: Colors.red),
+                      tooltip: '現在のセットを削除',
                       onPressed: () {
                         if (widget.templates.length > 1) {
                           setState(() {
                             widget.templates.removeAt(_editingTemplateIndex);
-                            _editingTemplateIndex = 0;
-                            _titleController.text = widget.templates[0].title;
+                            if (_editingTemplateIndex >=
+                                widget.templates.length) {
+                              _editingTemplateIndex =
+                                  widget.templates.length - 1;
+                            }
+                            _titleController.text =
+                                widget.templates[_editingTemplateIndex].title;
                           });
                         }
                       },
@@ -579,11 +638,28 @@ class _EditTemplatesPageState extends State<EditTemplatesPage> {
                 Expanded(
                   child: TextField(
                     controller: _itemController,
-                    decoration: const InputDecoration(hintText: '新しい項目名'),
+                    decoration: const InputDecoration(
+                      hintText: '新しい項目名を入力（決定で追加）',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onSubmitted: (val) {
+                      if (val.isNotEmpty) {
+                        setState(() {
+                          currentTemplate.items.add(CheckItem(name: val));
+                          _itemController.clear();
+                        });
+                      }
+                    },
                   ),
                 ),
+                const SizedBox(width: 8),
                 IconButton(
-                  icon: const Icon(Icons.add_circle),
+                  icon: const Icon(
+                    Icons.add_circle,
+                    color: Colors.blue,
+                    size: 36,
+                  ),
                   onPressed: () {
                     if (_itemController.text.isNotEmpty) {
                       setState(() {
@@ -598,31 +674,41 @@ class _EditTemplatesPageState extends State<EditTemplatesPage> {
               ],
             ),
           ),
-          Expanded(
-            child: ReorderableListView.builder(
-              itemCount: currentTemplate.items.length,
-              // 最新の onReorderItem を使用
-              onReorderItem: (oldIndex, newIndex) {
-                setState(() {
-                  final item = currentTemplate.items.removeAt(oldIndex);
-                  currentTemplate.items.insert(newIndex, item);
-                });
-              },
-              itemBuilder: (context, index) {
-                final item = currentTemplate.items[index];
-                return EditItemTile(
-                  key: ValueKey(item),
-                  item: item,
-                  index: index,
-                  template: currentTemplate,
-                  scHistory: widget.scHistory,
-                  onDelete: () =>
-                      setState(() => currentTemplate.items.removeAt(index)),
-                  onHistoryChanged: () => setState(() {}),
-                );
-              },
+          if (currentTemplate.items.isEmpty)
+            const Expanded(
+              child: Center(
+                child: Text(
+                  '項目がまだありません。\n上の入力欄から項目を追加してください。',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey, fontSize: 14),
+                ),
+              ),
+            )
+          else
+            Expanded(
+              child: ReorderableListView.builder(
+                itemCount: currentTemplate.items.length,
+                onReorderItem: (oldIndex, newIndex) {
+                  setState(() {
+                    final item = currentTemplate.items.removeAt(oldIndex);
+                    currentTemplate.items.insert(newIndex, item);
+                  });
+                },
+                itemBuilder: (context, index) {
+                  final item = currentTemplate.items[index];
+                  return EditItemTile(
+                    key: ValueKey(item),
+                    item: item,
+                    index: index,
+                    template: currentTemplate,
+                    scHistory: widget.scHistory,
+                    onDelete: () =>
+                        setState(() => currentTemplate.items.removeAt(index)),
+                    onHistoryChanged: () => setState(() {}),
+                  );
+                },
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -806,7 +892,6 @@ class _EditItemTileState extends State<EditItemTile> {
                               children: widget.scHistory
                                   .map(
                                     (name) => GestureDetector(
-                                      // GestureDetectorで長押しを検知
                                       onLongPress: () {
                                         setState(
                                           () => widget.scHistory.remove(name),
