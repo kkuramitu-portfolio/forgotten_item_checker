@@ -166,16 +166,13 @@ class _MainCheckPageState extends State<MainCheckPage> {
     });
   }
 
-  // 振動ロジック：awaitできるようにFutureを返す
   Future<void> _vibrate(HapticFeedbackType type) async {
     if (!_isVibrationEnabled) {
       return;
     }
     if (type == HapticFeedbackType.light) {
-      // OKボタン：ご要望の「カチッ」という感触
       await HapticFeedback.mediumImpact();
     } else {
-      // 完了時：しっかりとした「ブルッ」
       await HapticFeedback.vibrate();
     }
   }
@@ -416,7 +413,6 @@ class _MainCheckPageState extends State<MainCheckPage> {
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 _actionButton('スキップ', Icons.close, Colors.grey, () async {
-                  // 振動を待ってから更新
                   final pending = _templates[_currentIndex].items
                       .where((i) => i.status == ItemStatus.pending)
                       .toList();
@@ -430,7 +426,8 @@ class _MainCheckPageState extends State<MainCheckPage> {
                   });
                   _saveData();
                 }),
-                _actionButton('後で', Icons.replay, Colors.orange, () {
+                // 【修正箇所】async を追加して Future<void> を返すようにしました
+                _actionButton('後で', Icons.replay, Colors.orange, () async {
                   setState(() {
                     final items = _templates[_currentIndex].items;
                     items.remove(item);
@@ -442,7 +439,6 @@ class _MainCheckPageState extends State<MainCheckPage> {
                   _saveData();
                 }),
                 _actionButton('OK!', Icons.check, themeColor, () async {
-                  // 1. 振動命令を出し、完了を待つ（画面更新の直前）
                   final pending = _templates[_currentIndex].items
                       .where((i) => i.status == ItemStatus.pending)
                       .toList();
@@ -452,7 +448,6 @@ class _MainCheckPageState extends State<MainCheckPage> {
                     await _vibrate(HapticFeedbackType.light);
                   }
 
-                  // 2. 振動の後に画面を更新
                   if (mounted) {
                     setState(() {
                       item.status = ItemStatus.done;
