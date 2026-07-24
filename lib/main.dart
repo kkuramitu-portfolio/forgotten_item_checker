@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // バイブレーション用
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -27,7 +27,6 @@ class ForgottenItemCheckerApp extends StatelessWidget {
 
 enum ItemStatus { pending, done, skipped }
 
-// --- モデルクラス ---
 class CheckItem {
   String name;
   ItemStatus status;
@@ -80,7 +79,6 @@ class ItemTemplate {
   }
 }
 
-// --- メイン画面 ---
 class MainCheckPage extends StatefulWidget {
   const MainCheckPage({super.key});
 
@@ -93,24 +91,23 @@ class _MainCheckPageState extends State<MainCheckPage> {
   List<String> _scHistory = [];
   int _currentIndex = 0;
   bool _isLoading = true;
-
-  // 追加：設定項目
   bool _isVibrationEnabled = true;
-  String _announcement = ""; // お知らせ内容
+  String _announcement = "";
+  String _lastDismissedAnnouncement = "";
 
   @override
   void initState() {
     super.initState();
     _loadData();
-    _checkUpdates(); // 起動時にお知らせをチェック
   }
 
-  // 将来的にネットからお知らせを取得する関数（今回はデモ用に文字を入れます）
   void _checkUpdates() {
-    setState(() {
-      // 本来はここで http パッケージ等を使って外部JSONを読み込みます
-      _announcement = "【お知らせ】最新版 v1.0.2 が公開されました！Googleドライブから更新してね。";
-    });
+    const currentMsg = "【お知らせ】最新版 v1.0.2 が公開されました！Googleドライブから更新してね。";
+    if (currentMsg != _lastDismissedAnnouncement) {
+      setState(() {
+        _announcement = currentMsg;
+      });
+    }
   }
 
   Future<void> _saveData() async {
@@ -120,6 +117,10 @@ class _MainCheckPageState extends State<MainCheckPage> {
     await prefs.setInt('current_index', _currentIndex);
     await prefs.setStringList('sc_history', _scHistory);
     await prefs.setBool('vibration_enabled', _isVibrationEnabled);
+    await prefs.setString(
+      'last_dismissed_announcement',
+      _lastDismissedAnnouncement,
+    );
   }
 
   Future<void> _loadData() async {
@@ -128,6 +129,9 @@ class _MainCheckPageState extends State<MainCheckPage> {
     final int? savedIndex = prefs.getInt('current_index');
     final List<String>? savedHistory = prefs.getStringList('sc_history');
     final bool? savedVib = prefs.getBool('vibration_enabled');
+    final String? savedDismissed = prefs.getString(
+      'last_dismissed_announcement',
+    );
 
     setState(() {
       if (encoded != null) {
@@ -136,9 +140,12 @@ class _MainCheckPageState extends State<MainCheckPage> {
           l.map((model) => ItemTemplate.fromMap(model)),
         );
         _currentIndex = savedIndex ?? 0;
-        if (_currentIndex >= _templates.length) _currentIndex = 0;
+        if (_currentIndex >= _templates.length) {
+          _currentIndex = 0;
+        }
         _scHistory = savedHistory ?? [];
         _isVibrationEnabled = savedVib ?? true;
+        _lastDismissedAnnouncement = savedDismissed ?? "";
       } else {
         _templates = [
           ItemTemplate(
@@ -155,17 +162,18 @@ class _MainCheckPageState extends State<MainCheckPage> {
         ];
       }
       _isLoading = false;
+      _checkUpdates();
     });
   }
 
-  // バイブレーション実行関数
   void _vibrate(HapticFeedbackType type) {
-    if (_isVibrationEnabled) {
-      if (type == HapticFeedbackType.light) {
-        HapticFeedback.lightImpact();
-      } else {
-        HapticFeedback.vibrate();
-      }
+    if (!_isVibrationEnabled) {
+      return;
+    }
+    if (type == HapticFeedbackType.light) {
+      HapticFeedback.mediumImpact();
+    } else {
+      HapticFeedback.vibrate();
     }
   }
 
@@ -189,10 +197,13 @@ class _MainCheckPageState extends State<MainCheckPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading || _templates.isEmpty)
+    if (_isLoading || _templates.isEmpty) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
 
-    if (_currentIndex >= _templates.length) _currentIndex = 0;
+    if (_currentIndex >= _templates.length) {
+      _currentIndex = 0;
+    }
 
     final currentTemplate = _templates[_currentIndex];
     final pendingItems = currentTemplate.items
@@ -270,7 +281,9 @@ class _MainCheckPageState extends State<MainCheckPage> {
                 ),
               );
               setState(() {
-                if (_currentIndex >= _templates.length) _currentIndex = 0;
+                if (_currentIndex >= _templates.length) {
+                  _currentIndex = 0;
+                }
               });
               _saveData();
             },
@@ -279,7 +292,6 @@ class _MainCheckPageState extends State<MainCheckPage> {
       ),
       body: Column(
         children: [
-          // お知らせバナー（内容がある場合のみ表示）
           if (_announcement.isNotEmpty)
             Container(
               width: double.infinity,
@@ -304,7 +316,13 @@ class _MainCheckPageState extends State<MainCheckPage> {
                   ),
                   IconButton(
                     icon: const Icon(Icons.close, size: 16),
-                    onPressed: () => setState(() => _announcement = ""),
+                    onPressed: () {
+                      setState(() {
+                        _lastDismissedAnnouncement = _announcement;
+                        _announcement = "";
+                      });
+                      _saveData();
+                    },
                   ),
                 ],
               ),
@@ -327,7 +345,6 @@ class _MainCheckPageState extends State<MainCheckPage> {
     );
   }
 
-  // 設定ダイアログ
   void _showSettingsDialog() {
     showDialog(
       context: context,
@@ -396,8 +413,16 @@ class _MainCheckPageState extends State<MainCheckPage> {
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 _actionButton('スキップ', Icons.close, Colors.grey, () {
-                  setState(() => item.status = ItemStatus.skipped);
-                  _sortItems();
+                  setState(() {
+                    item.status = ItemStatus.skipped;
+                    _sortItems();
+                    final pending = _templates[_currentIndex].items.where(
+                      (i) => i.status == ItemStatus.pending,
+                    );
+                    if (pending.isEmpty) {
+                      _vibrate(HapticFeedbackType.heavy);
+                    }
+                  });
                   _saveData();
                 }),
                 _actionButton('後で', Icons.replay, Colors.orange, () {
@@ -412,9 +437,18 @@ class _MainCheckPageState extends State<MainCheckPage> {
                   _saveData();
                 }),
                 _actionButton('OK!', Icons.check, themeColor, () {
-                  _vibrate(HapticFeedbackType.light); // 軽いバイブ
-                  setState(() => item.status = ItemStatus.done);
-                  _sortItems();
+                  setState(() {
+                    item.status = ItemStatus.done;
+                    _sortItems();
+                    final pending = _templates[_currentIndex].items.where(
+                      (i) => i.status == ItemStatus.pending,
+                    );
+                    if (pending.isEmpty) {
+                      _vibrate(HapticFeedbackType.heavy);
+                    } else {
+                      _vibrate(HapticFeedbackType.light);
+                    }
+                  });
                   _saveData();
                 }),
               ],
@@ -500,8 +534,10 @@ class _MainCheckPageState extends State<MainCheckPage> {
         trailing: item.status != ItemStatus.pending
             ? TextButton(
                 onPressed: () {
-                  setState(() => item.status = ItemStatus.pending);
-                  _sortItems();
+                  setState(() {
+                    item.status = ItemStatus.pending;
+                    _sortItems();
+                  });
                   _saveData();
                 },
                 child: const Text('戻す'),
@@ -525,11 +561,6 @@ class _MainCheckPageState extends State<MainCheckPage> {
   }
 
   Widget _buildCompleteMessage() {
-    // 完了時にしっかりバイブ
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _vibrate(HapticFeedbackType.heavy),
-    );
-
     return Padding(
       padding: const EdgeInsets.all(32.0),
       child: Column(
@@ -560,7 +591,6 @@ class _MainCheckPageState extends State<MainCheckPage> {
 
 enum HapticFeedbackType { light, heavy }
 
-// --- テンプレート編集画面 (変更なし) ---
 class EditTemplatesPage extends StatefulWidget {
   final List<ItemTemplate> templates;
   final int initialIndex;
@@ -589,6 +619,7 @@ class _EditTemplatesPageState extends State<EditTemplatesPage> {
     Colors.teal,
     Colors.brown,
   ];
+
   @override
   void initState() {
     super.initState();
@@ -704,9 +735,10 @@ class _EditTemplatesPageState extends State<EditTemplatesPage> {
                           setState(() {
                             widget.templates.removeAt(_editingTemplateIndex);
                             if (_editingTemplateIndex >=
-                                widget.templates.length)
+                                widget.templates.length) {
                               _editingTemplateIndex =
                                   widget.templates.length - 1;
+                            }
                             _titleController.text =
                                 widget.templates[_editingTemplateIndex].title;
                           });
@@ -809,6 +841,7 @@ class EditItemTile extends StatefulWidget {
   final List<String> scHistory;
   final VoidCallback onDelete;
   final VoidCallback onHistoryChanged;
+
   const EditItemTile({
     super.key,
     required this.item,
@@ -818,12 +851,14 @@ class EditItemTile extends StatefulWidget {
     required this.onDelete,
     required this.onHistoryChanged,
   });
+
   @override
   State<EditItemTile> createState() => _EditItemTileState();
 }
 
 class _EditItemTileState extends State<EditItemTile> {
   late TextEditingController _linkController;
+
   @override
   void initState() {
     super.initState();
@@ -855,6 +890,7 @@ class _EditItemTileState extends State<EditItemTile> {
           ? 1
           : 2;
     }
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: Padding(
