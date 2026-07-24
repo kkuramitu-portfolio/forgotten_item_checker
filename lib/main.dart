@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // バイブレーション用
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -26,6 +27,7 @@ class ForgottenItemCheckerApp extends StatelessWidget {
 
 enum ItemStatus { pending, done, skipped }
 
+// --- モデルクラス ---
 class CheckItem {
   String name;
   ItemStatus status;
@@ -78,6 +80,7 @@ class ItemTemplate {
   }
 }
 
+// --- メイン画面 ---
 class MainCheckPage extends StatefulWidget {
   const MainCheckPage({super.key});
 
@@ -91,10 +94,23 @@ class _MainCheckPageState extends State<MainCheckPage> {
   int _currentIndex = 0;
   bool _isLoading = true;
 
+  // 追加：設定項目
+  bool _isVibrationEnabled = true;
+  String _announcement = ""; // お知らせ内容
+
   @override
   void initState() {
     super.initState();
     _loadData();
+    _checkUpdates(); // 起動時にお知らせをチェック
+  }
+
+  // 将来的にネットからお知らせを取得する関数（今回はデモ用に文字を入れます）
+  void _checkUpdates() {
+    setState(() {
+      // 本来はここで http パッケージ等を使って外部JSONを読み込みます
+      _announcement = "【お知らせ】最新版 v1.0.2 が公開されました！Googleドライブから更新してね。";
+    });
   }
 
   Future<void> _saveData() async {
@@ -103,6 +119,7 @@ class _MainCheckPageState extends State<MainCheckPage> {
     await prefs.setString('all_templates', encoded);
     await prefs.setInt('current_index', _currentIndex);
     await prefs.setStringList('sc_history', _scHistory);
+    await prefs.setBool('vibration_enabled', _isVibrationEnabled);
   }
 
   Future<void> _loadData() async {
@@ -110,6 +127,7 @@ class _MainCheckPageState extends State<MainCheckPage> {
     final String? encoded = prefs.getString('all_templates');
     final int? savedIndex = prefs.getInt('current_index');
     final List<String>? savedHistory = prefs.getStringList('sc_history');
+    final bool? savedVib = prefs.getBool('vibration_enabled');
 
     setState(() {
       if (encoded != null) {
@@ -118,10 +136,9 @@ class _MainCheckPageState extends State<MainCheckPage> {
           l.map((model) => ItemTemplate.fromMap(model)),
         );
         _currentIndex = savedIndex ?? 0;
-        if (_currentIndex >= _templates.length) {
-          _currentIndex = 0;
-        }
+        if (_currentIndex >= _templates.length) _currentIndex = 0;
         _scHistory = savedHistory ?? [];
+        _isVibrationEnabled = savedVib ?? true;
       } else {
         _templates = [
           ItemTemplate(
@@ -139,6 +156,17 @@ class _MainCheckPageState extends State<MainCheckPage> {
       }
       _isLoading = false;
     });
+  }
+
+  // バイブレーション実行関数
+  void _vibrate(HapticFeedbackType type) {
+    if (_isVibrationEnabled) {
+      if (type == HapticFeedbackType.light) {
+        HapticFeedback.lightImpact();
+      } else {
+        HapticFeedback.vibrate();
+      }
+    }
   }
 
   void _sortItems() {
@@ -161,13 +189,10 @@ class _MainCheckPageState extends State<MainCheckPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading || _templates.isEmpty) {
+    if (_isLoading || _templates.isEmpty)
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
 
-    if (_currentIndex >= _templates.length) {
-      _currentIndex = 0;
-    }
+    if (_currentIndex >= _templates.length) _currentIndex = 0;
 
     final currentTemplate = _templates[_currentIndex];
     final pendingItems = currentTemplate.items
@@ -188,9 +213,9 @@ class _MainCheckPageState extends State<MainCheckPage> {
             icon: const Icon(Icons.swap_horiz),
             onSelected: (index) {
               if (index == 999) {
-                _launchURL(
-                  'https://docs.google.com/forms/d/e/1FAIpQLSfwPKdGwoEvtr3VvRbvYGuMjd6Gb0_VHIs83OCQo_Cvltv5-A/viewform?usp=pp_url&entry.1476558753=%E5%BF%98%E3%82%8C%E7%89%A9%E3%83%81%E3%82%A7%E3%83%83%E3%82%AB%E3%83%BC+Pro',
-                );
+                _launchURL('https://forms.gle/your_google_form_url');
+              } else if (index == 888) {
+                _showSettingsDialog();
               } else {
                 setState(() {
                   _currentIndex = index;
@@ -198,9 +223,7 @@ class _MainCheckPageState extends State<MainCheckPage> {
                 });
               }
             },
-            // 【修正ポイント】型を明示したリストを直接作成する
             itemBuilder: (BuildContext context) => <PopupMenuEntry<int>>[
-              // テンプレート一覧をループで回して追加
               for (int i = 0; i < _templates.length; i++)
                 PopupMenuItem<int>(
                   value: i,
@@ -210,9 +233,17 @@ class _MainCheckPageState extends State<MainCheckPage> {
                         : _templates[i].title,
                   ),
                 ),
-              // 仕切り線
               const PopupMenuDivider(),
-              // フィードバック項目
+              const PopupMenuItem<int>(
+                value: 888,
+                child: Row(
+                  children: [
+                    Icon(Icons.settings, color: Colors.grey, size: 20),
+                    SizedBox(width: 8),
+                    Text('アプリ設定'),
+                  ],
+                ),
+              ),
               const PopupMenuItem<int>(
                 value: 999,
                 child: Row(
@@ -239,9 +270,7 @@ class _MainCheckPageState extends State<MainCheckPage> {
                 ),
               );
               setState(() {
-                if (_currentIndex >= _templates.length) {
-                  _currentIndex = 0;
-                }
+                if (_currentIndex >= _templates.length) _currentIndex = 0;
               });
               _saveData();
             },
@@ -250,6 +279,36 @@ class _MainCheckPageState extends State<MainCheckPage> {
       ),
       body: Column(
         children: [
+          // お知らせバナー（内容がある場合のみ表示）
+          if (_announcement.isNotEmpty)
+            Container(
+              width: double.infinity,
+              color: Colors.yellow[100],
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.info_outline,
+                    size: 18,
+                    color: Colors.orange,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _announcement,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 16),
+                    onPressed: () => setState(() => _announcement = ""),
+                  ),
+                ],
+              ),
+            ),
           if (!isAllDone)
             _buildFocusCard(pendingItems.first, currentTemplate.color),
           if (isAllDone) _buildCompleteMessage(),
@@ -264,6 +323,34 @@ class _MainCheckPageState extends State<MainCheckPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // 設定ダイアログ
+  void _showSettingsDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('アプリ設定'),
+          content: SwitchListTile(
+            title: const Text('バイブレーション'),
+            subtitle: const Text('チェック時や完了時に振動します'),
+            value: _isVibrationEnabled,
+            onChanged: (val) {
+              setDialogState(() => _isVibrationEnabled = val);
+              setState(() => _isVibrationEnabled = val);
+              _saveData();
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('閉じる'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -325,6 +412,7 @@ class _MainCheckPageState extends State<MainCheckPage> {
                   _saveData();
                 }),
                 _actionButton('OK!', Icons.check, themeColor, () {
+                  _vibrate(HapticFeedbackType.light); // 軽いバイブ
                   setState(() => item.status = ItemStatus.done);
                   _sortItems();
                   _saveData();
@@ -437,6 +525,11 @@ class _MainCheckPageState extends State<MainCheckPage> {
   }
 
   Widget _buildCompleteMessage() {
+    // 完了時にしっかりバイブ
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _vibrate(HapticFeedbackType.heavy),
+    );
+
     return Padding(
       padding: const EdgeInsets.all(32.0),
       child: Column(
@@ -465,6 +558,9 @@ class _MainCheckPageState extends State<MainCheckPage> {
   }
 }
 
+enum HapticFeedbackType { light, heavy }
+
+// --- テンプレート編集画面 (変更なし) ---
 class EditTemplatesPage extends StatefulWidget {
   final List<ItemTemplate> templates;
   final int initialIndex;
@@ -475,7 +571,6 @@ class EditTemplatesPage extends StatefulWidget {
     required this.initialIndex,
     required this.scHistory,
   });
-
   @override
   State<EditTemplatesPage> createState() => _EditTemplatesPageState();
 }
@@ -494,7 +589,6 @@ class _EditTemplatesPageState extends State<EditTemplatesPage> {
     Colors.teal,
     Colors.brown,
   ];
-
   @override
   void initState() {
     super.initState();
@@ -505,7 +599,6 @@ class _EditTemplatesPageState extends State<EditTemplatesPage> {
   @override
   Widget build(BuildContext context) {
     final currentTemplate = widget.templates[_editingTemplateIndex];
-
     return Scaffold(
       appBar: AppBar(title: const Text('テンプレートの編集')),
       body: Column(
@@ -576,14 +669,11 @@ class _EditTemplatesPageState extends State<EditTemplatesPage> {
                     Expanded(
                       child: TextField(
                         controller: _titleController,
-                        onChanged: (val) {
-                          setState(() {
-                            currentTemplate.title = val;
-                          });
-                        },
+                        onChanged: (val) =>
+                            setState(() => currentTemplate.title = val),
                         decoration: const InputDecoration(
                           labelText: 'セットの名前',
-                          hintText: '例：出張の日（タップして入力）',
+                          hintText: '例：出張の日',
                           isDense: true,
                         ),
                       ),
@@ -593,7 +683,6 @@ class _EditTemplatesPageState extends State<EditTemplatesPage> {
                         Icons.add_to_photos,
                         color: Colors.green,
                       ),
-                      tooltip: '新規セット追加',
                       onPressed: () {
                         setState(() {
                           widget.templates.add(
@@ -610,16 +699,14 @@ class _EditTemplatesPageState extends State<EditTemplatesPage> {
                     ),
                     IconButton(
                       icon: const Icon(Icons.delete_forever, color: Colors.red),
-                      tooltip: '現在のセットを削除',
                       onPressed: () {
                         if (widget.templates.length > 1) {
                           setState(() {
                             widget.templates.removeAt(_editingTemplateIndex);
                             if (_editingTemplateIndex >=
-                                widget.templates.length) {
+                                widget.templates.length)
                               _editingTemplateIndex =
                                   widget.templates.length - 1;
-                            }
                             _titleController.text =
                                 widget.templates[_editingTemplateIndex].title;
                           });
@@ -722,7 +809,6 @@ class EditItemTile extends StatefulWidget {
   final List<String> scHistory;
   final VoidCallback onDelete;
   final VoidCallback onHistoryChanged;
-
   const EditItemTile({
     super.key,
     required this.item,
@@ -732,14 +818,12 @@ class EditItemTile extends StatefulWidget {
     required this.onDelete,
     required this.onHistoryChanged,
   });
-
   @override
   State<EditItemTile> createState() => _EditItemTileState();
 }
 
 class _EditItemTileState extends State<EditItemTile> {
   late TextEditingController _linkController;
-
   @override
   void initState() {
     super.initState();
@@ -771,7 +855,6 @@ class _EditItemTileState extends State<EditItemTile> {
           ? 1
           : 2;
     }
-
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: Padding(
