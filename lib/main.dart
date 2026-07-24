@@ -166,17 +166,16 @@ class _MainCheckPageState extends State<MainCheckPage> {
     });
   }
 
-  // 振動ロジックの強化
+  // 振動ロジック：awaitできるようにFutureを返す
   Future<void> _vibrate(HapticFeedbackType type) async {
-    if (!_isVibrationEnabled) return;
-
+    if (!_isVibrationEnabled) {
+      return;
+    }
     if (type == HapticFeedbackType.light) {
-      // OKボタン時：標準的な「ブルッ」
-      await HapticFeedback.vibrate();
+      // OKボタン：ご要望の「カチッ」という感触
+      await HapticFeedback.mediumImpact();
     } else {
-      // 完了時：お祝いの「ブルッ、ブルッ」
-      await HapticFeedback.vibrate();
-      await Future.delayed(const Duration(milliseconds: 200));
+      // 完了時：しっかりとした「ブルッ」
       await HapticFeedback.vibrate();
     }
   }
@@ -416,16 +415,18 @@ class _MainCheckPageState extends State<MainCheckPage> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                _actionButton('スキップ', Icons.close, Colors.grey, () {
+                _actionButton('スキップ', Icons.close, Colors.grey, () async {
+                  // 振動を待ってから更新
+                  final pending = _templates[_currentIndex].items
+                      .where((i) => i.status == ItemStatus.pending)
+                      .toList();
+                  if (pending.length <= 1) {
+                    await _vibrate(HapticFeedbackType.heavy);
+                  }
+
                   setState(() {
                     item.status = ItemStatus.skipped;
                     _sortItems();
-                    final pending = _templates[_currentIndex].items.where(
-                      (i) => i.status == ItemStatus.pending,
-                    );
-                    if (pending.isEmpty) {
-                      _vibrate(HapticFeedbackType.heavy);
-                    }
                   });
                   _saveData();
                 }),
@@ -440,23 +441,25 @@ class _MainCheckPageState extends State<MainCheckPage> {
                   });
                   _saveData();
                 }),
-                _actionButton('OK!', Icons.check, themeColor, () {
-                  // 1. まず振動させる（setStateの外で実行）
+                _actionButton('OK!', Icons.check, themeColor, () async {
+                  // 1. 振動命令を出し、完了を待つ（画面更新の直前）
                   final pending = _templates[_currentIndex].items
                       .where((i) => i.status == ItemStatus.pending)
                       .toList();
                   if (pending.length <= 1) {
-                    _vibrate(HapticFeedbackType.heavy); // 最後の一つなら完了バイブ
+                    await _vibrate(HapticFeedbackType.heavy);
                   } else {
-                    _vibrate(HapticFeedbackType.light); // 通常バイブ
+                    await _vibrate(HapticFeedbackType.light);
                   }
 
-                  // 2. その後で画面を更新
-                  setState(() {
-                    item.status = ItemStatus.done;
-                    _sortItems();
-                  });
-                  _saveData();
+                  // 2. 振動の後に画面を更新
+                  if (mounted) {
+                    setState(() {
+                      item.status = ItemStatus.done;
+                      _sortItems();
+                    });
+                    _saveData();
+                  }
                 }),
               ],
             ),
@@ -470,7 +473,7 @@ class _MainCheckPageState extends State<MainCheckPage> {
     String label,
     IconData icon,
     Color color,
-    VoidCallback onPressed,
+    Future<void> Function() onPressed,
   ) {
     return Column(
       children: [
