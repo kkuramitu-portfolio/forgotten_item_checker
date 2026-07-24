@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:vibration/vibration.dart'; // 追加：精密振動用
+import 'package:vibration/vibration.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -166,17 +166,16 @@ class _MainCheckPageState extends State<MainCheckPage> {
     });
   }
 
-  // 精密振動ロジック
   Future<void> _vibrate(HapticFeedbackType type) async {
-    if (!_isVibrationEnabled) return;
+    if (!_isVibrationEnabled) {
+      return;
+    }
 
-    // 端末が振動に対応しているか確認
-    if (await Vibration.hasVibrator() ?? false) {
+    final hasVibrator = await Vibration.hasVibrator();
+    if (hasVibrator) {
       if (type == HapticFeedbackType.light) {
-        // OKボタン：50ミリ秒（カチッという短い手応え）
         Vibration.vibrate(duration: 50);
       } else {
-        // 完了時：200ミリ秒（しっかりした、でも長すぎない振動）
         Vibration.vibrate(duration: 200);
       }
     }
@@ -447,7 +446,6 @@ class _MainCheckPageState extends State<MainCheckPage> {
                       .where((i) => i.status == ItemStatus.pending)
                       .toList();
 
-                  // 振動を先に実行
                   if (pending.length <= 1) {
                     await _vibrate(HapticFeedbackType.heavy);
                   } else {
@@ -602,7 +600,6 @@ class _MainCheckPageState extends State<MainCheckPage> {
 
 enum HapticFeedbackType { light, heavy }
 
-// --- テンプレート編集画面 (変更なし) ---
 class EditTemplatesPage extends StatefulWidget {
   final List<ItemTemplate> templates;
   final int initialIndex;
