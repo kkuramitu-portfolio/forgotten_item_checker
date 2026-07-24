@@ -166,14 +166,18 @@ class _MainCheckPageState extends State<MainCheckPage> {
     });
   }
 
-  void _vibrate(HapticFeedbackType type) {
-    if (!_isVibrationEnabled) {
-      return;
-    }
+  // 振動ロジックの強化
+  Future<void> _vibrate(HapticFeedbackType type) async {
+    if (!_isVibrationEnabled) return;
+
     if (type == HapticFeedbackType.light) {
-      HapticFeedback.mediumImpact();
+      // OKボタン時：標準的な「ブルッ」
+      await HapticFeedback.vibrate();
     } else {
-      HapticFeedback.vibrate();
+      // 完了時：お祝いの「ブルッ、ブルッ」
+      await HapticFeedback.vibrate();
+      await Future.delayed(const Duration(milliseconds: 200));
+      await HapticFeedback.vibrate();
     }
   }
 
@@ -437,17 +441,20 @@ class _MainCheckPageState extends State<MainCheckPage> {
                   _saveData();
                 }),
                 _actionButton('OK!', Icons.check, themeColor, () {
+                  // 1. まず振動させる（setStateの外で実行）
+                  final pending = _templates[_currentIndex].items
+                      .where((i) => i.status == ItemStatus.pending)
+                      .toList();
+                  if (pending.length <= 1) {
+                    _vibrate(HapticFeedbackType.heavy); // 最後の一つなら完了バイブ
+                  } else {
+                    _vibrate(HapticFeedbackType.light); // 通常バイブ
+                  }
+
+                  // 2. その後で画面を更新
                   setState(() {
                     item.status = ItemStatus.done;
                     _sortItems();
-                    final pending = _templates[_currentIndex].items.where(
-                      (i) => i.status == ItemStatus.pending,
-                    );
-                    if (pending.isEmpty) {
-                      _vibrate(HapticFeedbackType.heavy);
-                    } else {
-                      _vibrate(HapticFeedbackType.light);
-                    }
                   });
                   _saveData();
                 }),
