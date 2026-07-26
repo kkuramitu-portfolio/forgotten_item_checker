@@ -39,9 +39,6 @@ dependencies:
   url_launcher: ^6.3.2
   vibration: ^3.2.0
 
-flutter_local_notifications: ^17.0.0
-timezone: ^0.9.2
-
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -103,3 +100,6 @@ flutter_launcher_icons:
   # Android用の背景色（アダプティブアイコン対応）
   adaptive_icon_background: "#3F51B5" # indigo系の色
   adaptive_icon_foreground: "assets/icon.png"
+
+dependency_overrides:
+  device_info_plus: 10.1.0
