@@ -1,3 +1,4 @@
+rootProject.name = "forgotten_item_checker"
 pluginManagement {
     val flutterSdkPath =
         run {
