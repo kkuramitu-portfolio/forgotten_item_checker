@@ -1,8 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:vibration/vibration.dart';
+import 'package:http/http.dart' as http;
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,6 +28,7 @@ class ForgottenItemCheckerApp extends StatelessWidget {
 
 enum ItemStatus { pending, done, skipped }
 
+// --- モデルクラス ---
 class CheckItem {
   String name;
   ItemStatus status;
@@ -79,6 +81,7 @@ class ItemTemplate {
   }
 }
 
+// --- メイン画面 ---
 class MainCheckPage extends StatefulWidget {
   const MainCheckPage({super.key});
 
@@ -91,22 +94,56 @@ class _MainCheckPageState extends State<MainCheckPage> {
   List<String> _scHistory = [];
   int _currentIndex = 0;
   bool _isLoading = true;
+
+  // お知らせ・フィードバック用設定
+  String _announcementMessage = "";
+  String _announcementId = "";
+  String _lastReadId = "";
+  bool _showBanner = false;
+
+  final String _feedbackUrl =
+      "https://docs.google.com/forms/d/e/1FAIpQLSfwPKdGwoEvtr3VvRbvYGuMjd6Gb0_VHIs83OCQo_Cvltv5-A/viewform?usp=pp_url&entry.1476558753=%E5%BF%98%E3%82%8C%E7%89%A9%E3%83%81%E3%82%A7%E3%83%83%E3%82%AB%E3%83%BC+Pro";
+  final String _gistUrl =
+      "https://gist.githubusercontent.com/.../announcement.json";
+
   bool _isVibrationEnabled = true;
-  String _announcement = "";
-  String _lastDismissedAnnouncement = "";
 
   @override
   void initState() {
     super.initState();
-    _loadData();
+    _initializeData();
   }
 
-  void _checkUpdates() {
-    const currentMsg = "【お知らせ】最新版 v1.0.2 が公開されました！Googleドライブから更新してね。";
-    if (currentMsg != _lastDismissedAnnouncement) {
-      setState(() {
-        _announcement = currentMsg;
-      });
+  Future<void> _initializeData() async {
+    await _loadData();
+    await _fetchRemoteAnnouncement();
+  }
+
+  Future<void> _fetchRemoteAnnouncement() async {
+    if (_gistUrl.contains("docs.google.com")) {
+      return;
+    }
+    try {
+      final urlWithTimestamp =
+          "$_gistUrl?t=${DateTime.now().millisecondsSinceEpoch}";
+      final response = await http.get(Uri.parse(urlWithTimestamp));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
+        final String newId = data['id'] ?? "";
+        final String newMessage = data['message'] ?? "";
+
+        setState(() {
+          _announcementId = newId;
+          _announcementMessage = newMessage;
+          if (_announcementId != _lastReadId &&
+              _announcementMessage.isNotEmpty) {
+            _showBanner = true;
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint("お知らせ取得失敗: $e");
     }
   }
 
@@ -117,10 +154,7 @@ class _MainCheckPageState extends State<MainCheckPage> {
     await prefs.setInt('current_index', _currentIndex);
     await prefs.setStringList('sc_history', _scHistory);
     await prefs.setBool('vibration_enabled', _isVibrationEnabled);
-    await prefs.setString(
-      'last_dismissed_announcement',
-      _lastDismissedAnnouncement,
-    );
+    await prefs.setString('last_read_announcement_id', _lastReadId);
   }
 
   Future<void> _loadData() async {
@@ -129,8 +163,8 @@ class _MainCheckPageState extends State<MainCheckPage> {
     final int? savedIndex = prefs.getInt('current_index');
     final List<String>? savedHistory = prefs.getStringList('sc_history');
     final bool? savedVib = prefs.getBool('vibration_enabled');
-    final String? savedDismissed = prefs.getString(
-      'last_dismissed_announcement',
+    final String? savedLastReadId = prefs.getString(
+      'last_read_announcement_id',
     );
 
     setState(() {
@@ -145,7 +179,7 @@ class _MainCheckPageState extends State<MainCheckPage> {
         }
         _scHistory = savedHistory ?? [];
         _isVibrationEnabled = savedVib ?? true;
-        _lastDismissedAnnouncement = savedDismissed ?? "";
+        _lastReadId = savedLastReadId ?? "";
       } else {
         _templates = [
           ItemTemplate(
@@ -162,21 +196,15 @@ class _MainCheckPageState extends State<MainCheckPage> {
         ];
       }
       _isLoading = false;
-      _checkUpdates();
     });
   }
 
-  Future<void> _vibrate(HapticFeedbackType type) async {
-    if (!_isVibrationEnabled) {
-      return;
-    }
-
-    final hasVibrator = await Vibration.hasVibrator();
-    if (hasVibrator) {
+  void _vibrate(HapticFeedbackType type) {
+    if (_isVibrationEnabled) {
       if (type == HapticFeedbackType.light) {
-        Vibration.vibrate(duration: 50);
+        HapticFeedback.lightImpact();
       } else {
-        Vibration.vibrate(duration: 200);
+        HapticFeedback.vibrate();
       }
     }
   }
@@ -201,6 +229,7 @@ class _MainCheckPageState extends State<MainCheckPage> {
 
   @override
   Widget build(BuildContext context) {
+    // ★修正箇所1: if文をブロック {} で囲みました
     if (_isLoading || _templates.isEmpty) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
@@ -228,9 +257,11 @@ class _MainCheckPageState extends State<MainCheckPage> {
             icon: const Icon(Icons.swap_horiz),
             onSelected: (index) {
               if (index == 999) {
-                _launchURL('https://forms.gle/your_google_form_url');
+                _launchURL(_feedbackUrl);
               } else if (index == 888) {
                 _showSettingsDialog();
+              } else if (index == 777) {
+                _showAnnouncementDialog();
               } else {
                 setState(() {
                   _currentIndex = index;
@@ -249,6 +280,16 @@ class _MainCheckPageState extends State<MainCheckPage> {
                   ),
                 ),
               const PopupMenuDivider(),
+              const PopupMenuItem<int>(
+                value: 777,
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.orange, size: 20),
+                    SizedBox(width: 8),
+                    Text('最新のお知らせ'),
+                  ],
+                ),
+              ),
               const PopupMenuItem<int>(
                 value: 888,
                 child: Row(
@@ -296,34 +337,31 @@ class _MainCheckPageState extends State<MainCheckPage> {
       ),
       body: Column(
         children: [
-          if (_announcement.isNotEmpty)
+          if (_showBanner && _announcementMessage.isNotEmpty)
             Container(
               width: double.infinity,
               color: Colors.yellow[100],
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
                 children: [
-                  const Icon(
-                    Icons.info_outline,
-                    size: 18,
-                    color: Colors.orange,
-                  ),
-                  const SizedBox(width: 8),
+                  const Icon(Icons.campaign, size: 20, color: Colors.orange),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      _announcement,
+                      _announcementMessage,
                       style: const TextStyle(
-                        fontSize: 12,
+                        fontSize: 13,
                         color: Colors.black87,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close, size: 16),
+                    icon: const Icon(Icons.close, size: 18),
                     onPressed: () {
                       setState(() {
-                        _lastDismissedAnnouncement = _announcement;
-                        _announcement = "";
+                        _showBanner = false;
+                        _lastReadId = _announcementId;
                       });
                       _saveData();
                     },
@@ -343,6 +381,32 @@ class _MainCheckPageState extends State<MainCheckPage> {
                 currentTemplate.color,
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAnnouncementDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.info_outline, color: Colors.orange),
+            SizedBox(width: 8),
+            Text('最新のお知らせ'),
+          ],
+        ),
+        content: Text(
+          _announcementMessage.isEmpty
+              ? "現在、新しいお知らせはありません。"
+              : _announcementMessage,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('閉じる'),
           ),
         ],
       ),
@@ -394,7 +458,6 @@ class _MainCheckPageState extends State<MainCheckPage> {
               style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
               textAlign: TextAlign.center,
             ),
-
             if (item.linkUrl != null && item.linkUrl!.isNotEmpty) ...[
               const SizedBox(height: 16),
               ElevatedButton.icon(
@@ -411,26 +474,16 @@ class _MainCheckPageState extends State<MainCheckPage> {
                 ),
               ),
             ],
-
             const SizedBox(height: 24),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                _actionButton('スキップ', Icons.close, Colors.grey, () async {
-                  final pending = _templates[_currentIndex].items
-                      .where((i) => i.status == ItemStatus.pending)
-                      .toList();
-                  if (pending.length <= 1) {
-                    await _vibrate(HapticFeedbackType.heavy);
-                  }
-
-                  setState(() {
-                    item.status = ItemStatus.skipped;
-                    _sortItems();
-                  });
+                _actionButton('スキップ', Icons.close, Colors.grey, () {
+                  setState(() => item.status = ItemStatus.skipped);
+                  _sortItems();
                   _saveData();
                 }),
-                _actionButton('後で', Icons.replay, Colors.orange, () async {
+                _actionButton('後で', Icons.replay, Colors.orange, () {
                   setState(() {
                     final items = _templates[_currentIndex].items;
                     items.remove(item);
@@ -441,24 +494,11 @@ class _MainCheckPageState extends State<MainCheckPage> {
                   });
                   _saveData();
                 }),
-                _actionButton('OK!', Icons.check, themeColor, () async {
-                  final pending = _templates[_currentIndex].items
-                      .where((i) => i.status == ItemStatus.pending)
-                      .toList();
-
-                  if (pending.length <= 1) {
-                    await _vibrate(HapticFeedbackType.heavy);
-                  } else {
-                    await _vibrate(HapticFeedbackType.light);
-                  }
-
-                  if (mounted) {
-                    setState(() {
-                      item.status = ItemStatus.done;
-                      _sortItems();
-                    });
-                    _saveData();
-                  }
+                _actionButton('OK!', Icons.check, themeColor, () {
+                  _vibrate(HapticFeedbackType.light);
+                  setState(() => item.status = ItemStatus.done);
+                  _sortItems();
+                  _saveData();
                 }),
               ],
             ),
@@ -472,7 +512,7 @@ class _MainCheckPageState extends State<MainCheckPage> {
     String label,
     IconData icon,
     Color color,
-    Future<void> Function() onPressed,
+    VoidCallback onPressed,
   ) {
     return Column(
       children: [
@@ -543,10 +583,8 @@ class _MainCheckPageState extends State<MainCheckPage> {
         trailing: item.status != ItemStatus.pending
             ? TextButton(
                 onPressed: () {
-                  setState(() {
-                    item.status = ItemStatus.pending;
-                    _sortItems();
-                  });
+                  setState(() => item.status = ItemStatus.pending);
+                  _sortItems();
                   _saveData();
                 },
                 child: const Text('戻す'),
@@ -570,6 +608,9 @@ class _MainCheckPageState extends State<MainCheckPage> {
   }
 
   Widget _buildCompleteMessage() {
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _vibrate(HapticFeedbackType.heavy),
+    );
     return Padding(
       padding: const EdgeInsets.all(32.0),
       child: Column(
@@ -600,6 +641,7 @@ class _MainCheckPageState extends State<MainCheckPage> {
 
 enum HapticFeedbackType { light, heavy }
 
+// --- テンプレート編集画面 ---
 class EditTemplatesPage extends StatefulWidget {
   final List<ItemTemplate> templates;
   final int initialIndex;
@@ -610,6 +652,7 @@ class EditTemplatesPage extends StatefulWidget {
     required this.initialIndex,
     required this.scHistory,
   });
+
   @override
   State<EditTemplatesPage> createState() => _EditTemplatesPageState();
 }
@@ -636,9 +679,35 @@ class _EditTemplatesPageState extends State<EditTemplatesPage> {
     _titleController.text = widget.templates[_editingTemplateIndex].title;
   }
 
+  void _duplicateCurrentTemplate() {
+    final original = widget.templates[_editingTemplateIndex];
+    final duplicatedItems = original.items
+        .map(
+          (item) => CheckItem(
+            name: item.name,
+            linkUrl: item.linkUrl,
+            status: ItemStatus.pending,
+          ),
+        )
+        .toList();
+
+    final newTemplate = ItemTemplate(
+      title: "${original.title}（コピー）",
+      items: duplicatedItems,
+      color: original.color,
+    );
+
+    setState(() {
+      widget.templates.add(newTemplate);
+      _editingTemplateIndex = widget.templates.length - 1;
+      _titleController.text = newTemplate.title;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentTemplate = widget.templates[_editingTemplateIndex];
+
     return Scaffold(
       appBar: AppBar(title: const Text('テンプレートの編集')),
       body: Column(
@@ -720,9 +789,18 @@ class _EditTemplatesPageState extends State<EditTemplatesPage> {
                     ),
                     IconButton(
                       icon: const Icon(
+                        Icons.content_copy,
+                        color: Colors.orange,
+                      ),
+                      tooltip: '現在のセットを複製',
+                      onPressed: _duplicateCurrentTemplate,
+                    ),
+                    IconButton(
+                      icon: const Icon(
                         Icons.add_to_photos,
                         color: Colors.green,
                       ),
+                      tooltip: '新規セット追加',
                       onPressed: () {
                         setState(() {
                           widget.templates.add(
@@ -739,10 +817,12 @@ class _EditTemplatesPageState extends State<EditTemplatesPage> {
                     ),
                     IconButton(
                       icon: const Icon(Icons.delete_forever, color: Colors.red),
+                      tooltip: '現在のセットを削除',
                       onPressed: () {
                         if (widget.templates.length > 1) {
                           setState(() {
                             widget.templates.removeAt(_editingTemplateIndex);
+                            // ★修正箇所2: if文をブロック {} で囲みました
                             if (_editingTemplateIndex >=
                                 widget.templates.length) {
                               _editingTemplateIndex =
@@ -843,6 +923,7 @@ class _EditTemplatesPageState extends State<EditTemplatesPage> {
   }
 }
 
+// --- 各項目の編集用タイル ---
 class EditItemTile extends StatefulWidget {
   final CheckItem item;
   final int index;
