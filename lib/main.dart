@@ -104,7 +104,7 @@ class _MainCheckPageState extends State<MainCheckPage> {
   final String _feedbackUrl =
       "https://docs.google.com/forms/d/e/1FAIpQLSfwPKdGwoEvtr3VvRbvYGuMjd6Gb0_VHIs83OCQo_Cvltv5-A/viewform?usp=pp_url&entry.1476558753=%E5%BF%98%E3%82%8C%E7%89%A9%E3%83%81%E3%82%A7%E3%83%83%E3%82%AB%E3%83%BC+Pro";
   final String _gistUrl =
-      "https://gist.githubusercontent.com/.../announcement.json";
+      "https://gist.githubusercontent.com/kkuramitu-portfolio/db7b4736727b15c24b3bcd4975474235/raw/gistfile1.txt?t=${DateTime.now().millisecondsSinceEpoch}";
 
   bool _isVibrationEnabled = true;
 
