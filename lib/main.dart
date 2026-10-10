@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http;
+import 'package:vibration/vibration.dart'; // ★ 追加: 確実なバイブレーション制御用
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -280,14 +281,29 @@ class _MainCheckPageState extends State<MainCheckPage> {
     });
   }
 
-  // ★ 修正箇所：バイブレーションを動いていた元の設定に戻しました
-  void _vibrate(HapticFeedbackType type) {
-    if (_isVibrationEnabled) {
-      if (type == HapticFeedbackType.light) {
-        HapticFeedback.lightImpact(); // OK時の短い振動
+  // ★ 修正箇所：vibrationパッケージを用いた確実なバイブレーション発火
+  Future<void> _vibrate(HapticFeedbackType type) async {
+    if (!_isVibrationEnabled) return;
+
+    if (type == HapticFeedbackType.light) {
+      // OK時の短い振動（クリック感）
+      bool? hasVibrator = await Vibration.hasVibrator();
+      if (hasVibrator == true) {
+        bool? hasAmplitudeControl = await Vibration.hasAmplitudeControl();
+        if (hasAmplitudeControl == true) {
+          // 振幅（強さ）を制御できる端末の場合、少し弱めの心地よい振動（30ミリ秒）
+          Vibration.vibrate(duration: 30, amplitude: 100);
+        } else {
+          // 制御できない場合は時間のみ指定して強制発火
+          Vibration.vibrate(duration: 30);
+        }
       } else {
-        HapticFeedback.vibrate(); // 完了時のしっかりした振動
+        // 万が一vibrationパッケージが機能しない環境のフォールバック
+        HapticFeedback.lightImpact();
       }
+    } else {
+      // 完了時のしっかりした振動（既存で機能しているためheavyImpactを使用）
+      HapticFeedback.heavyImpact();
     }
   }
 
