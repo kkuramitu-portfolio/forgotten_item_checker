@@ -22,19 +22,24 @@ class VibrationHelper {
       bool? hasVibrator = await Vibration.hasVibrator();
       if (hasVibrator == true) {
         bool? hasCustom = await Vibration.hasCustomVibrationsSupport();
+        // 【修正ポイント】
+        // Androidのモーター立ち上がりを考慮し、30ms -> 50ms に変更。
+        // 50msは確実なクリック感を得られつつ、長すぎないベストな数値です。
         if (hasCustom == true) {
-          // カスタム振動対応端末: 30msの短い振動、振幅100で心地よいクリック感
-          await Vibration.vibrate(duration: 30, amplitude: 100);
+          // カスタム振動対応端末: 50msの短い振動、振幅128(中程度の強さ)
+          await Vibration.vibrate(duration: 50, amplitude: 128);
         } else {
-          // 非対応端末: 単純な30msの振動
-          await Vibration.vibrate(duration: 30);
+          // 非対応端末: 単純な50msの振動
+          await Vibration.vibrate(duration: 50);
         }
       } else {
-        // フォールバック
-        HapticFeedback.lightImpact();
+        // フォールバック: lightImpactが鳴らない端末向けに、
+        // 確実に鳴る可能性が高い標準の vibrate() を使用
+        HapticFeedback.vibrate();
       }
     } catch (e) {
-      HapticFeedback.lightImpact();
+      // エラー時も確実に鳴らすためのフォールバック
+      HapticFeedback.vibrate();
     }
   }
 
