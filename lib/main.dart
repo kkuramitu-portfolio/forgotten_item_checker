@@ -1,12 +1,9 @@
 import 'dart:convert';
-import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http;
-import 'package:vibration/vibration.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -245,7 +242,6 @@ class _MainCheckPageState extends State<MainCheckPage> {
           l.map((model) => ItemTemplate.fromMap(model)),
         );
 
-        // 背番号の初期化（互換性対応）
         for (var template in _templates) {
           bool needsInit = template.items.every(
             (item) => item.originalIndex == 0,
@@ -283,22 +279,12 @@ class _MainCheckPageState extends State<MainCheckPage> {
     });
   }
 
-  // ★ 修正箇所：iOS/Androidのハイブリッド対応
   void _vibrate(HapticFeedbackType type) {
     if (_isVibrationEnabled) {
       if (type == HapticFeedbackType.light) {
-        if (!kIsWeb && Platform.isAndroid) {
-          // Androidでは標準のlightImpactが無視される機種が多いため、
-          // vibrationパッケージを使用して30ミリ秒の短い振動を強制的に発生させ、クリック感を出す
-          Vibration.vibrate(duration: 30);
-        } else {
-          // iOSでは標準のHapticFeedbackが心地よく機能するためそのまま使用
-          HapticFeedback.lightImpact();
-        }
+        HapticFeedback.lightImpact();
       } else {
-        // 完了時のしっかりした長めの振動
-        // 以前正常に機能していた heavyImpact() を使用
-        HapticFeedback.heavyImpact();
+        HapticFeedback.vibrate();
       }
     }
   }
@@ -433,7 +419,6 @@ class _MainCheckPageState extends State<MainCheckPage> {
                 if (_currentIndex >= _templates.length) {
                   _currentIndex = 0;
                 }
-                // 編集画面から戻った際に、本来の順番を背番号として振り直す
                 for (var template in _templates) {
                   for (int i = 0; i < template.items.length; i++) {
                     template.items[i].originalIndex = i;
@@ -774,7 +759,6 @@ class _MainCheckPageState extends State<MainCheckPage> {
                 for (var item in _templates[_currentIndex].items) {
                   item.status = ItemStatus.pending;
                 }
-                // リセット時に「本来の順番」に並び直す
                 _templates[_currentIndex].items.sort(
                   (a, b) => a.originalIndex.compareTo(b.originalIndex),
                 );
@@ -859,7 +843,7 @@ class _EditTemplatesPageState extends State<EditTemplatesPage> {
             name: item.name,
             linkUrl: item.linkUrl,
             status: ItemStatus.pending,
-            originalIndex: item.originalIndex, // コピー時も引き継ぐ
+            originalIndex: item.originalIndex,
           ),
         )
         .toList();
