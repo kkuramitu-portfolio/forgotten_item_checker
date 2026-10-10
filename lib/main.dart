@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -242,6 +244,7 @@ class _MainCheckPageState extends State<MainCheckPage> {
           l.map((model) => ItemTemplate.fromMap(model)),
         );
 
+        // 背番号の初期化（互換性対応）
         for (var template in _templates) {
           bool needsInit = template.items.every(
             (item) => item.originalIndex == 0,
@@ -279,11 +282,20 @@ class _MainCheckPageState extends State<MainCheckPage> {
     });
   }
 
+  // ★ 修正箇所：外部パッケージを使わず、Flutter標準機能だけでOSごとに最適化
   void _vibrate(HapticFeedbackType type) {
     if (_isVibrationEnabled) {
       if (type == HapticFeedbackType.light) {
-        HapticFeedback.lightImpact();
+        if (!kIsWeb && Platform.isAndroid) {
+          // Androidでは lightImpact が無視される機種が多いため、
+          // 以前「しっかり鳴る」と確認できている heavyImpact をOK時の短い振動として代用します
+          HapticFeedback.heavyImpact();
+        } else {
+          // iPhoneでは理想通りの心地よい短い振動
+          HapticFeedback.lightImpact();
+        }
       } else {
+        // 完了時の達成感のある長めの振動（ご提示いただいた理想のコードと同じ設定）
         HapticFeedback.vibrate();
       }
     }
@@ -419,6 +431,7 @@ class _MainCheckPageState extends State<MainCheckPage> {
                 if (_currentIndex >= _templates.length) {
                   _currentIndex = 0;
                 }
+                // 編集画面から戻った際に、本来の順番を背番号として振り直す
                 for (var template in _templates) {
                   for (int i = 0; i < template.items.length; i++) {
                     template.items[i].originalIndex = i;
@@ -759,6 +772,7 @@ class _MainCheckPageState extends State<MainCheckPage> {
                 for (var item in _templates[_currentIndex].items) {
                   item.status = ItemStatus.pending;
                 }
+                // リセット時に「本来の順番」に並び直す
                 _templates[_currentIndex].items.sort(
                   (a, b) => a.originalIndex.compareTo(b.originalIndex),
                 );
@@ -843,7 +857,7 @@ class _EditTemplatesPageState extends State<EditTemplatesPage> {
             name: item.name,
             linkUrl: item.linkUrl,
             status: ItemStatus.pending,
-            originalIndex: item.originalIndex,
+            originalIndex: item.originalIndex, // コピー時も引き継ぐ
           ),
         )
         .toList();
