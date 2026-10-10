@@ -1,10 +1,12 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http;
-import 'package:vibration/vibration.dart'; // ★ 追加: 確実なバイブレーション制御用
+import 'package:vibration/vibration.dart'; // ★追加: vibrationパッケージ
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -281,29 +283,22 @@ class _MainCheckPageState extends State<MainCheckPage> {
     });
   }
 
-  // ★ 修正箇所：vibrationパッケージを用いた確実なバイブレーション発火
-  Future<void> _vibrate(HapticFeedbackType type) async {
-    if (!_isVibrationEnabled) return;
-
-    if (type == HapticFeedbackType.light) {
-      // OK時の短い振動（クリック感）
-      bool? hasVibrator = await Vibration.hasVibrator();
-      if (hasVibrator == true) {
-        bool? hasAmplitudeControl = await Vibration.hasAmplitudeControl();
-        if (hasAmplitudeControl == true) {
-          // 振幅（強さ）を制御できる端末の場合、少し弱めの心地よい振動（30ミリ秒）
-          Vibration.vibrate(duration: 30, amplitude: 100);
-        } else {
-          // 制御できない場合は時間のみ指定して強制発火
+  // ★ 修正箇所：Android実機で短い振動が鳴らない問題を解決
+  void _vibrate(HapticFeedbackType type) {
+    if (_isVibrationEnabled) {
+      if (type == HapticFeedbackType.light) {
+        if (!kIsWeb && Platform.isAndroid) {
+          // Androidでは標準のlightImpactが無視される機種が多いため、
+          // vibrationパッケージを使用して30ミリ秒の短い振動を強制的に発生させ、クリック感を出す
           Vibration.vibrate(duration: 30);
+        } else {
+          // iOSでは標準のHapticFeedbackが心地よく機能するためそのまま使用
+          HapticFeedback.lightImpact();
         }
       } else {
-        // 万が一vibrationパッケージが機能しない環境のフォールバック
-        HapticFeedback.lightImpact();
+        // 完了時のしっかりした振動（既存のまま）
+        HapticFeedback.vibrate();
       }
-    } else {
-      // 完了時のしっかりした振動（既存で機能しているためheavyImpactを使用）
-      HapticFeedback.heavyImpact();
     }
   }
 
