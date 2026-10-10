@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http;
-import 'package:vibration/vibration.dart'; // ★追加: vibrationパッケージ
+import 'package:vibration/vibration.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -283,7 +283,7 @@ class _MainCheckPageState extends State<MainCheckPage> {
     });
   }
 
-  // ★ 修正箇所：Android実機で短い振動が鳴らない問題を解決
+  // ★ 修正箇所：iOS/Androidのハイブリッド対応
   void _vibrate(HapticFeedbackType type) {
     if (_isVibrationEnabled) {
       if (type == HapticFeedbackType.light) {
@@ -296,8 +296,9 @@ class _MainCheckPageState extends State<MainCheckPage> {
           HapticFeedback.lightImpact();
         }
       } else {
-        // 完了時のしっかりした振動（既存のまま）
-        HapticFeedback.vibrate();
+        // 完了時のしっかりした長めの振動
+        // 以前正常に機能していた heavyImpact() を使用
+        HapticFeedback.heavyImpact();
       }
     }
   }
