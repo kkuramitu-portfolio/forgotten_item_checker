@@ -1,6 +1,4 @@
 import 'dart:convert';
-import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -282,21 +280,12 @@ class _MainCheckPageState extends State<MainCheckPage> {
     });
   }
 
-  // ★ 修正箇所：外部パッケージを使わず、Flutter標準機能だけでOSごとに最適化
+  // ★ 【ステップ1】極限までシンプルにしたバイブレーション処理
   void _vibrate(HapticFeedbackType type) {
     if (_isVibrationEnabled) {
       if (type == HapticFeedbackType.light) {
-        if (!kIsWeb && Platform.isAndroid) {
-          // Androidでは lightImpact が無視される機種が多いため、
-          // 以前「しっかり鳴る」と確認できている heavyImpact をOK時の短い振動として代用します
-          HapticFeedback.heavyImpact();
-        } else {
-          // iPhoneでは理想通りの心地よい短い振動
-          HapticFeedback.lightImpact();
-        }
-      } else {
-        // 完了時の達成感のある長めの振動（ご提示いただいた理想のコードと同じ設定）
-        HapticFeedback.vibrate();
+        // 項目ごとのOK時のみ、確実に鳴らす
+        HapticFeedback.lightImpact();
       }
     }
   }
@@ -752,9 +741,11 @@ class _MainCheckPageState extends State<MainCheckPage> {
   }
 
   Widget _buildCompleteMessage() {
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _vibrate(HapticFeedbackType.heavy),
-    );
+    // ★ 【ステップ1】検証のため、全項目完了時のバイブレーションは一時的に無効化しています。
+    // 次のステップで追加します。
+    // WidgetsBinding.instance.addPostFrameCallback(
+    //   (_) => _vibrate(HapticFeedbackType.heavy),
+    // );
     return Padding(
       padding: const EdgeInsets.all(32.0),
       child: Column(
