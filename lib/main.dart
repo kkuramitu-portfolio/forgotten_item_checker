@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -280,13 +282,21 @@ class _MainCheckPageState extends State<MainCheckPage> {
     });
   }
 
-  // ★ 【ステップ1】極限までシンプルにしたバイブレーション処理
-  void _vibrate(HapticFeedbackType type) {
-    if (_isVibrationEnabled) {
-      if (type == HapticFeedbackType.light) {
-        // 項目ごとのOK時のみ、確実に鳴らす
-        HapticFeedback.lightImpact();
+  // ★ 修正箇所：非同期(async/await)にして、確実に鳴るように制御
+  Future<void> _vibrate(HapticFeedbackType type) async {
+    if (!_isVibrationEnabled) return;
+
+    if (type == HapticFeedbackType.light) {
+      if (!kIsWeb && Platform.isAndroid) {
+        // AndroidではlightImpactが鳴らない機種が多いため、確実に鳴るheavyImpactを代用
+        await HapticFeedback.heavyImpact();
+      } else {
+        // iOSでは理想通りの心地よいlightImpact
+        await HapticFeedback.lightImpact();
       }
+    } else {
+      // 完了時の長めの振動
+      await HapticFeedback.vibrate();
     }
   }
 
@@ -609,8 +619,16 @@ class _MainCheckPageState extends State<MainCheckPage> {
                       });
                       _saveData();
                     }),
-                    _actionButton('OK!', Icons.check, themeColor, () {
-                      _vibrate(HapticFeedbackType.light);
+                    // ★ 修正箇所：バイブレーションを確実に鳴らすための非同期処理
+                    _actionButton('OK!', Icons.check, themeColor, () async {
+                      // 1. まずバイブレーションの命令をOSに送る
+                      await _vibrate(HapticFeedbackType.light);
+
+                      // 2. 画面の重い再描画（PatternOverlay等）でバイブがキャンセルされるのを防ぐため、
+                      // ほんのわずか（15ミリ秒）だけ待機してOSに振動する時間を与える
+                      await Future.delayed(const Duration(milliseconds: 15));
+
+                      // 3. その後、画面を切り替える
                       setState(() => item.status = ItemStatus.done);
                       _sortItems();
                       _saveData();
@@ -741,11 +759,9 @@ class _MainCheckPageState extends State<MainCheckPage> {
   }
 
   Widget _buildCompleteMessage() {
-    // ★ 【ステップ1】検証のため、全項目完了時のバイブレーションは一時的に無効化しています。
-    // 次のステップで追加します。
-    // WidgetsBinding.instance.addPostFrameCallback(
-    //   (_) => _vibrate(HapticFeedbackType.heavy),
-    // );
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _vibrate(HapticFeedbackType.heavy),
+    );
     return Padding(
       padding: const EdgeInsets.all(32.0),
       child: Column(
